@@ -17,7 +17,7 @@ pip install -r requirments.txt
 
 #### 2.2 安装pytorch
 
-在官网（https://pytorch.org/）查找适配设备的版本安装
+在官网（https://pytorch.org/ ）查找适配设备的版本安装
 
 #### 2.3 安装yolov10软件包
 

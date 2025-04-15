@@ -10,6 +10,9 @@ import argparse
 from pathlib import Path
 import os
 
+NORMAL_MESSAGE="everything is ok"
+NORMAL_COLOR=(0,255,0)
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -104,8 +107,8 @@ class YOLOv10Tracker:
                 print("Error: Tracks data is None.")
                 continue  # Skip this frame if no tracks
 
-            parking_message="no parked car"
-            parking_color=(0,255,0)
+            ED_message=NORMAL_MESSAGE
+            ED_color=NORMAL_COLOR
             # Draw detection results
             for result in tracks:
                 if result.boxes.id is None:
@@ -161,19 +164,18 @@ class YOLOv10Tracker:
                         'width': 3,
                         
                     }
-                    judger=Judger(current_data,prev_data)
+                    judger=Judger(current_data,prev_data,ED_message)
 
-                    if judger.isParking(current_data,prev_data):
-                        parking_message="there are parked cars!"
-                        parking_color=(0,0,255)
+                    # if judger.isParking(current_data,prev_data):
+                    #     parking_message="there are parked cars!"
+                    #     parking_color=(0,0,255)
+                    ED_message,ED_color=judger.main()
 
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
 
             #draw the message about parking
-            cv2.putText(self.frame, parking_message, (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6,parking_color , 2)
-            parking_message="no parked car"
-            parking_color=(0,255,0)
+            cv2.putText(self.frame, ED_message, (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6,ED_color , 2)
             # Show and output
             cv2.imshow("Frame", self.frame)
             self.video_writer.write(self.frame)

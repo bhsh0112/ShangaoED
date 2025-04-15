@@ -28,7 +28,6 @@ pip install -q git+https://github.com/THU-MIG/yolov10.git
 #### 2.4 运行代码
 
 ```
-python EventDet.py --source /path/to/vedio --output /path/to/output weights /path/to/weights_file
-														0(webcam)
+python EventDet.py --source /path/to/vedio(file->video 0->webcam) --output /path/to/output weights /path/to/weights_file
 ```
 

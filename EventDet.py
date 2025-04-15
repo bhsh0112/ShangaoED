@@ -6,9 +6,15 @@ from ultralytics import YOLOv10
 import signal
 import sys
 from  judger import Judger
+import argparse
+from pathlib import Path
+import os
 
-# Initialize YOLOv10 model
-yolov10_model = YOLOv10("./fake-yolo.pt")
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[0]  # YOLOv5 root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 class YOLOv10Tracker:
     def __init__(self, yolov10_model,input_path,output_path):
@@ -155,7 +161,7 @@ class YOLOv10Tracker:
                         'width': 3,
                         
                     }
-                    judger=Judger()
+                    judger=Judger(current_data,prev_data)
 
                     if judger.isParking(current_data,prev_data):
                         parking_message="there are parked cars!"
@@ -187,8 +193,18 @@ def signal_handler(sig, frame):
 # Capture Ctrl+C signal
 signal.signal(signal.SIGINT, signal_handler)
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--weights", nargs="+", type=str, default=ROOT / "weights/fake-yolo.pt", help="model path or triton URL")
+parser.add_argument("--source", type=str, default=ROOT / "data/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
+parser.add_argument("--output", type=str, default=ROOT / "output/", help="output path")
+
+args = parser.parse_args()
+
 # Start YOLOv10Tracker
-input_path = '/home/buaa/sh/shangao-EventDetection/data/test.mp4'
-output_path = "output.mp4"
+input_path = str(args.source)
+output_path = str(args.output)
+print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+print(str(args.weights))
+yolov10_model = YOLOv10(args.weights)
 yolo_tracker = YOLOv10Tracker(yolov10_model,input_path=input_path,output_path=output_path)
 yolo_tracker.run_tracking(input_path)

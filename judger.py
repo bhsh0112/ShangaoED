@@ -12,7 +12,6 @@ class Judger:
         self.prev_data=prev_data
 
     def main():
-        if
         return 
 
     def isParking(self,current_data,prev_data):

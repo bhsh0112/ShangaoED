@@ -32,15 +32,18 @@ class Judger:
         #TODO:合理的最小速度计算方法
         min_speed=self.current_data['size_w']*MIN_SPEED_WEIGHT
         # print(current_data['speed'])
-        if len(self.prev_data)==0:
-            return False
+        if(self.current_data['class']=="car" or self.current_data['class']=="trunc"):
+            if len(self.prev_data)==0:
+                return False
+            else:
+                return self.current_data['speed']<=0.5 and self.prev_data['speed']<=0.5
         else:
-            return self.current_data['speed']<=0.5 and self.prev_data['speed']<=0.5
+            return False
         
     def isJam(self):
         #TODO
         return False
     
     def isPeople(self):
-        #TODO
+        return self.current_data['class']=="people"
         return False

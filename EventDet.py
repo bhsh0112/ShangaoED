@@ -152,6 +152,7 @@ class YOLOv10Tracker:
                     # get current data
                     current_data = {
                         'id': track_id,  # Use track_id
+                        'class':class_name,
                         'Time': current_time,
                         'type': class_id, 
                         'x': current_position[0],

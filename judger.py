@@ -9,10 +9,11 @@ EVENT_COLOR=(0,0,255)
 NORMAL_COLOR=(0,255,0)
 
 class Judger:
-    def __init__(self,current_data,prev_data,prev_ED_message):
+    def __init__(self,current_data,prev_data,prev_ED_message,vehicle_num):
         self.current_data=current_data
         self.prev_data=prev_data
         self.prev_ED_message=prev_ED_message
+        self.vehicle_num=vehicle_num
 
     def main(self):
         #TODO:同时出现多种事件时

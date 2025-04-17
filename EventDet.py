@@ -110,6 +110,7 @@ class YOLOv10Tracker:
             ED_message=NORMAL_MESSAGE
             ED_color=NORMAL_COLOR
             # Draw detection results
+            
             for result in tracks:
                 if result.boxes.id is None:
                     continue
@@ -120,6 +121,7 @@ class YOLOv10Tracker:
                 names = result.names if hasattr(result, 'names') else {}
                 track_ids=result.boxes.id.int().cpu().tolist()
 
+                
                 # Iterate over each detection box
                 for i, box in enumerate(boxes.xyxy):
                     speed=0

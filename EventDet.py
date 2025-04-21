@@ -53,7 +53,6 @@ class YOLOv10Tracker:
     def track_match(self,track_id):
         prev_data= dict()
         for data in self.vehicle_data:
-            print(data)
             if data['id']==track_id:
                 prev_data=data
                 break
@@ -121,7 +120,7 @@ class YOLOv10Tracker:
                 names = result.names if hasattr(result, 'names') else {}
                 track_ids=result.boxes.id.int().cpu().tolist()
 
-                
+                jam_vehicle_num=0
                 # Iterate over each detection box
                 for i, box in enumerate(boxes.xyxy):
                     speed=0
@@ -167,18 +166,18 @@ class YOLOv10Tracker:
                         'width': 3,
                         
                     }
-                    judger=Judger(current_data,prev_data,ED_message)
+                    judger=Judger(current_data,prev_data,ED_message,jam_vehicle_num)
 
                     # if judger.isParking(current_data,prev_data):
                     #     parking_message="there are parked cars!"
                     #     parking_color=(0,0,255)
-                    ED_message,ED_color=judger.main()
+                    ED_message,ED_color,jam_vehicle_num=judger.main()
 
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
 
             #draw the message about parking
-            cv2.putText(self.frame, ED_message, (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6,ED_color , 2)
+            cv2.putText(self.frame, ED_message, (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,ED_color , 2)
             # Show and output
             cv2.imshow("Frame", self.frame)
             self.video_writer.write(self.frame)
@@ -208,8 +207,6 @@ args = parser.parse_args()
 # Start YOLOv10Tracker
 input_path = str(args.source)
 output_path = str(args.output)
-print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-print(str(args.weights))
 yolov10_model = YOLOv10(args.weights)
 yolo_tracker = YOLOv10Tracker(yolov10_model,input_path=input_path,output_path=output_path)
 yolo_tracker.run_tracking(input_path)

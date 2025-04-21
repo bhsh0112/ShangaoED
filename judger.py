@@ -1,13 +1,7 @@
 MIN_SPEED_WEIGHT=1
 MAX_JAM_VEHICLE_NUM=2
 
-PARKED_MESSAGE="there are parked cars!"
-JAM_MESSAGE="jam!"
-PEOPLE_MESSAGE="there are people!"
-NORMAL_MESSAGE="everything is ok"
 
-EVENT_COLOR=(0,0,255)
-NORMAL_COLOR=(0,255,0)
 
 class Judger:
     def __init__(self,current_data,prev_data,result,jam_vehicle_num):

@@ -10,7 +10,12 @@ import argparse
 from pathlib import Path
 import os
 
+PARKED_MESSAGE="there are parked cars!"
+JAM_MESSAGE="jam!"
+PEOPLE_MESSAGE="there are people!"
 NORMAL_MESSAGE="everything is ok"
+
+EVENT_COLOR=(0,0,255)
 NORMAL_COLOR=(0,255,0)
 
 FILE = Path(__file__).resolve()
@@ -83,6 +88,23 @@ class YOLOv10Tracker:
         if tmp_flag is True:
             self.vehicle_data.append(current_data)
 
+    def output(self,judger):
+        if judger.result[0]:#jam
+            cv2.putText(self.frame, JAM_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+            if judger.result[2]:#jam+people
+                cv2.putText(self.frame, PEOPLE_MESSAGE, (30, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+        else:
+            if judger.result[1]:#park
+                cv2.putText(self.frame, PARKED_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+                if judger.result[2]:#park+people
+                    cv2.putText(self.frame, PEOPLE_MESSAGE, (30, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+            else:
+                if judger.result[3]:#people
+                    cv2.putText(self.frame, PEOPLE_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+                else:#no event
+                    cv2.putText(self.frame, NORMAL_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,NORMAL_COLOR , 2)
+
+
     def run_tracking(self, video_path):
         """Run YOLOv10 model for object detection"""
         print(f"Processing video file: {video_path}")
@@ -106,8 +128,6 @@ class YOLOv10Tracker:
                 print("Error: Tracks data is None.")
                 continue  # Skip this frame if no tracks
 
-            ED_message=NORMAL_MESSAGE
-            ED_color=NORMAL_COLOR
             # Draw detection results
             result=[False,False,False]#jam,park,people
             for result in tracks:
@@ -168,13 +188,13 @@ class YOLOv10Tracker:
                     }
                     judger=Judger(current_data,prev_data,ED_message,jam_vehicle_num)
                     ED_message,ED_color,jam_vehicle_num=judger.main()
-
+                    result=judger.result
 
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
                 
             #draw the message about parking
-            cv2.putText(self.frame, ED_message, (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,ED_color , 2)
+            
             # Show and output
             cv2.imshow("Frame", self.frame)
             self.video_writer.write(self.frame)

@@ -62,7 +62,33 @@ python EventDet.py --source /path/to/vedio(file->video 0->webcam) --output /path
 | -------- | ---------------- | ----- | ---------------------- | ----------------- | ---------------------------- | --------------------------------------------- |
 | 输出信息 | everything is ok | jam！ | there are parked cars! | there are people! | jam！<br />there are people! | there are parked cars!<br />there are people! |
 
+## 代码修改
 
+### 1 修改输出方式
+
+​		**当前，输出方式为在图片左上角输出文字，如需修改请参考本节**
+
+​		修改位置：`EventDet.oy`中的EventDetector的output方法（91~105行）
+
+```python
+def output(self,judger):
+		if judger.result[0]:
+        if judger.result[2]:
+        		#同时发生“行人事件”和“堵车事件”的输出
+        else:
+          	#只发生“堵车事件”的输出
+    else:
+        if judger.result[1]:
+            if judger.result[2]:
+            		#同时发生“停车事件”和“行人事件”的输出
+            else:
+              	#只发生“停车事件”的输出
+        else:
+            if judger.result[3]:#people
+                #只发生“行人事件”的输出
+            else:
+                #无事件发生的输出
+```
 
 ## TODO
 

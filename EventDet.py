@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-class YOLOv10Tracker:
+class EventDetctor:
     def __init__(self, yolov10_model,input_path,output_path):
         if not yolov10_model:
             raise ValueError("YOLOv10 model cannot be None")
@@ -89,17 +89,21 @@ class YOLOv10Tracker:
             self.vehicle_data.append(current_data)
 
     def output(self,judger):
-        if judger.result[0]:#jam
-            cv2.putText(self.frame, JAM_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+        if judger.result[0]:
             if judger.result[2]:#jam+people
+                cv2.putText(self.frame, JAM_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                 cv2.putText(self.frame, PEOPLE_MESSAGE, (30, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+            else:#only jam
+                cv2.putText(self.frame, JAM_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
         else:
-            if judger.result[1]:#park
-                cv2.putText(self.frame, PARKED_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+            if judger.result[1]:
                 if judger.result[2]:#park+people
+                    cv2.putText(self.frame, PARKED_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                     cv2.putText(self.frame, PEOPLE_MESSAGE, (30, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
+                else:#only park
+                    cv2.putText(self.frame, PARKED_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
             else:
-                if judger.result[3]:#people
+                if judger.result[3]:#only people
                     cv2.putText(self.frame, PEOPLE_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                 else:#no event
                     cv2.putText(self.frame, NORMAL_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,NORMAL_COLOR , 2)
@@ -116,8 +120,6 @@ class YOLOv10Tracker:
             ret, self.frame = cap.read()
             if not ret:
                 break
-            # if not ret:
-            #     break
 
             current_time = time.time()
 
@@ -187,8 +189,9 @@ class YOLOv10Tracker:
                         
                     }
                     judger=Judger(current_data,prev_data,result,jam_vehicle_num)
-                    ED_message,ED_color,jam_vehicle_num=judger.main()
+                    judger.main()
                     result=judger.result
+                    jam_vehicle_num=judger.jam_vehicle_num
 
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
@@ -225,5 +228,5 @@ args = parser.parse_args()
 input_path = str(args.source)
 output_path = str(args.output)
 yolov10_model = YOLOv10(args.weights)
-yolo_tracker = YOLOv10Tracker(yolov10_model,input_path=input_path,output_path=output_path)
+yolo_tracker = EventDetctor(yolov10_model,input_path=input_path,output_path=output_path)
 yolo_tracker.run_tracking(input_path)

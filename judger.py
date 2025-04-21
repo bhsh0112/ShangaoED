@@ -10,32 +10,43 @@ EVENT_COLOR=(0,0,255)
 NORMAL_COLOR=(0,255,0)
 
 class Judger:
-    def __init__(self,current_data,prev_data,prev_ED_message,jam_vehicle_num):
+    def __init__(self,current_data,prev_data,result,jam_vehicle_num):
         self.current_data=current_data
         self.prev_data=prev_data
-        self.prev_ED_message=prev_ED_message
+        self.result=result
         self.jam_vehicle_num=jam_vehicle_num
         #TODO:合理的最小速度计算方法
         self.min_speed=self.current_data['size_w']*MIN_SPEED_WEIGHT
 
     def main(self):
-        if (self.current_data['class']=="car" or self.current_data['class']=="trunc") and self.current_data['speed']<self.min_speed:
-            print(self.jam_vehicle_num)
+        if (self.current_data['class']=="car" or self.current_data['class']=="truck") and self.current_data['speed']<self.min_speed:
+            # print(self.jam_vehicle_num)
             self.jam_vehicle_num=self.jam_vehicle_num+1
 
-        #TODO:同时出现多种事件时
-        if(self.prev_ED_message==NORMAL_MESSAGE):
-            if self.isJam():
-                print("success")
-                return JAM_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
+        # #TODO:同时出现多种事件时
+        # if(self.prev_ED_message==NORMAL_MESSAGE):
+        #     if self.isJam():
+        #         print("success")
+        #         return JAM_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
+        #     elif self.isParking():
+        #         return PARKED_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
+        #     elif self.isPeople():
+        #         return PEOPLE_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
+        #     else:
+        #         return NORMAL_MESSAGE,NORMAL_COLOR,self.jam_vehicle_num
+        # else:
+        #     return self.prev_ED_message,EVENT_COLOR,self.jam_vehicle_num
+
+        #TODO:思考逻辑是否正确
+        if self.result[0]==False:#jam
+            if(self.isJam()):
+                self.result[0]=True
+                self.result[1]=False
             elif self.isParking():
-                return PARKED_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
-            elif self.isPeople():
-                return PEOPLE_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
-            else:
-                return NORMAL_MESSAGE,NORMAL_COLOR,self.jam_vehicle_num
-        else:
-            return self.prev_ED_message,EVENT_COLOR,self.jam_vehicle_num
+                self.result[1]=True
+        
+        if self.isPeople():#people
+            self.result[2]=True
 
     def isParking(self):
         # print(current_data['speed'])

@@ -109,7 +109,7 @@ class YOLOv10Tracker:
             ED_message=NORMAL_MESSAGE
             ED_color=NORMAL_COLOR
             # Draw detection results
-            
+            result=[False,False,False]#jam,park,people
             for result in tracks:
                 if result.boxes.id is None:
                     continue
@@ -167,15 +167,12 @@ class YOLOv10Tracker:
                         
                     }
                     judger=Judger(current_data,prev_data,ED_message,jam_vehicle_num)
-
-                    # if judger.isParking(current_data,prev_data):
-                    #     parking_message="there are parked cars!"
-                    #     parking_color=(0,0,255)
                     ED_message,ED_color,jam_vehicle_num=judger.main()
+
 
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
-
+                
             #draw the message about parking
             cv2.putText(self.frame, ED_message, (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,ED_color , 2)
             # Show and output

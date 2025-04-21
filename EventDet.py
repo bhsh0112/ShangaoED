@@ -186,7 +186,7 @@ class YOLOv10Tracker:
                         'width': 3,
                         
                     }
-                    judger=Judger(current_data,prev_data,ED_message,jam_vehicle_num)
+                    judger=Judger(current_data,prev_data,result,jam_vehicle_num)
                     ED_message,ED_color,jam_vehicle_num=judger.main()
                     result=judger.result
 

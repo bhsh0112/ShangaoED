@@ -17,20 +17,6 @@ class Judger:
             # print(self.jam_vehicle_num)
             self.jam_vehicle_num=self.jam_vehicle_num+1
 
-        # #TODO:同时出现多种事件时
-        # if(self.prev_ED_message==NORMAL_MESSAGE):
-        #     if self.isJam():
-        #         print("success")
-        #         return JAM_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
-        #     elif self.isParking():
-        #         return PARKED_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
-        #     elif self.isPeople():
-        #         return PEOPLE_MESSAGE,EVENT_COLOR,self.jam_vehicle_num
-        #     else:
-        #         return NORMAL_MESSAGE,NORMAL_COLOR,self.jam_vehicle_num
-        # else:
-        #     return self.prev_ED_message,EVENT_COLOR,self.jam_vehicle_num
-
         #TODO:思考逻辑是否正确
         if self.result[0]==False:#jam
             if(self.isJam()):

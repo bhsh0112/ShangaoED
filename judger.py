@@ -1,5 +1,5 @@
 MIN_SPEED_WEIGHT=0.1
-MAX_JAM_VEHICLE_NUM=5
+MAX_JAM_VEHICLE_NUM=10
 
 
 
@@ -37,7 +37,7 @@ class Judger:
                 # print(self.current_data['speed'])
                 # print(self.prev_data['speed'])
                 # print("=======================")
-                return self.current_data['speed']<=5 and self.prev_data['speed']<=5
+                return self.current_data['speed']<=self.min_speed and self.prev_data['speed']<=self.min_speed
         else:
             return False
         

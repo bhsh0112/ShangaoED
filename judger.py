@@ -1,5 +1,6 @@
 MIN_SPEED_WEIGHT=0.1
 MAX_JAM_VEHICLE_NUM=10
+MIN_VEHICLE_WIDTH = 1.5
 
 
 
@@ -10,7 +11,9 @@ class Judger:
         self.result=result
         self.jam_vehicle_num=jam_vehicle_num
         #TODO:合理的最小速度计算方法
-        self.min_speed=self.current_data['size_w']*MIN_SPEED_WEIGHT
+        # self.min_speed=self.current_data['size_w']*MIN_SPEED_WEIGHT
+        base_speed = max(current_data.get('size_w', MIN_VEHICLE_WIDTH), MIN_VEHICLE_WIDTH)
+        self.min_speed = base_speed * MIN_SPEED_WEIGHT
 
     def main(self):
         if (self.current_data['class']=="car" or self.current_data['class']=="truck") and self.current_data['speed']<self.min_speed:
@@ -30,7 +33,7 @@ class Judger:
 
     def isParking(self):
         # print(current_data['speed'])
-        if(self.current_data['class']=="car" or self.current_data['class']=="trunc"):
+        if(self.current_data['class']=="car" or self.current_data['class']=="truck"):
             if len(self.prev_data)==0:
                 return False
             else:
@@ -42,7 +45,7 @@ class Judger:
             return False
         
     def isJam(self):
-        return self.jam_vehicle_num>=MAX_JAM_VEHICLE_NUM
+        return self.jam_vehicle_num>=MAX_JAM_VEHICLE_NUM and self.current_data['speed']<=self.min_speed
     
     def isPeople(self):
         return self.current_data['class']=="person"

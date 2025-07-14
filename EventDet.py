@@ -88,22 +88,24 @@ class EventDetctor:
         if tmp_flag is True:
             self.vehicle_data.append(current_data)
 
-    def output(self,judger):
-        if judger.result[0]:
-            if judger.result[2]:#jam+people
+    def output(self,jam_result):
+        jam, park, people = jam_result[:3]
+        if jam:
+            print("success")
+            if people:#jam+people
                 cv2.putText(self.frame, JAM_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                 cv2.putText(self.frame, PEOPLE_MESSAGE, (30, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
             else:#only jam
                 cv2.putText(self.frame, JAM_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
         else:
-            if judger.result[1]:
-                if judger.result[2]:#park+people
+            if park:
+                if people:#park+people
                     cv2.putText(self.frame, PARKED_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                     cv2.putText(self.frame, PEOPLE_MESSAGE, (30, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                 else:#only park
                     cv2.putText(self.frame, PARKED_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
             else:
-                if judger.result[3]:#only people
+                if people:#only people
                     cv2.putText(self.frame, PEOPLE_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                 else:#no event
                     cv2.putText(self.frame, NORMAL_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,NORMAL_COLOR , 2)
@@ -131,7 +133,7 @@ class EventDetctor:
                 continue  # Skip this frame if no tracks
 
             # Draw detection results
-            result=[False,False,False]#jam,park,people
+            jam_result=[False,False,False]#jam,park,people
             for result in tracks:
                 if result.boxes.id is None:
                     continue
@@ -188,18 +190,19 @@ class EventDetctor:
                         'width': 3,
                         
                     }
-                    judger=Judger(current_data,prev_data,result,jam_vehicle_num)
+                    judger=Judger(current_data,prev_data,jam_result,jam_vehicle_num)
                     judger.main()
-                    result=judger.result
+                    jam_result=judger.result
+                    
                     jam_vehicle_num=judger.jam_vehicle_num
 
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
                 
             #draw the message about parking
-            
+            self.output(jam_result)
             # Show and output
-            cv2.imshow("Frame", self.frame)
+            # cv2.imshow("Frame", self.frame)
             self.video_writer.write(self.frame)
 
             # Press 'q' to exit
@@ -218,15 +221,21 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--weights", nargs="+", type=str, default=ROOT / "weights/fake-yolo.pt", help="model path or triton URL")
-parser.add_argument("--source", type=str, default=ROOT / "data/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
-parser.add_argument("--output", type=str, default=ROOT / "output/", help="output path")
+parser.add_argument("--weights", nargs="+", type=str, default=ROOT / "weights/0714.pt", help="model path or triton URL")
+parser.add_argument("--source", type=str, default=ROOT / "data/test/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
+parser.add_argument("--output", type=str, default="/data2/file_swap/sh_space/ShangaoED/output/", help="output path")
 
 args = parser.parse_args()
 
 # Start YOLOv10Tracker
 input_path = str(args.source)
 output_path = str(args.output)
+if os.path.isdir(output_path):
+    input_filename = os.path.basename(input_path)
+    output_path = os.path.join(output_path, input_filename)
+
+print("Final output path:", output_path)
 yolov10_model = YOLOv10(args.weights)
+# print(output_path)
 yolo_tracker = EventDetctor(yolov10_model,input_path=input_path,output_path=output_path)
 yolo_tracker.run_tracking(input_path)

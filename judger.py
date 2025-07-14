@@ -1,5 +1,5 @@
-MIN_SPEED_WEIGHT=1
-MAX_JAM_VEHICLE_NUM=2
+MIN_SPEED_WEIGHT=0.1
+MAX_JAM_VEHICLE_NUM=5
 
 
 
@@ -34,7 +34,10 @@ class Judger:
             if len(self.prev_data)==0:
                 return False
             else:
-                return self.current_data['speed']<=0.5 and self.prev_data['speed']<=0.5
+                # print(self.current_data['speed'])
+                # print(self.prev_data['speed'])
+                # print("=======================")
+                return self.current_data['speed']<=5 and self.prev_data['speed']<=5
         else:
             return False
         

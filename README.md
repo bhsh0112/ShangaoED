@@ -25,7 +25,16 @@ pip install -r requirments.txt
 pip install -q git+https://github.com/THU-MIG/yolov10.git
 ```
 
-#### 2.4 运行代码
+#### 2.4 下载预训练权重
+
+| 描述                           | 性能   | 下载链接                                                     |
+| ------------------------------ | ------ | ------------------------------------------------------------ |
+| 之前项目所用权重               | 待完善 | [fake-yolo.pt](https://huggingface.co/bhsh0112/yolo_weights/resolve/main/fake-yolo.pt?download=true) |
+| 自标注少量数据，第一轮重训权重 | 待完善 | [0714.pt](https://huggingface.co/bhsh0112/yolo_weights/resolve/main/0714.pt?download=true) |
+
+
+
+#### 2.5 运行代码
 
 ```
 python EventDet.py --source /path/to/vedio(file->video 0->webcam) --output /path/to/output weights /path/to/weights_file

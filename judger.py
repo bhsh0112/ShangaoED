@@ -1,19 +1,19 @@
-MIN_SPEED_WEIGHT=0.1
-MAX_JAM_VEHICLE_NUM=10
+MIN_SPEED_WEIGHT=0.01
+MAX_JAM_VEHICLE_NUM=5
 MIN_VEHICLE_WIDTH = 1.5
 
 
 
 class Judger:
-    def __init__(self,current_data,prev_data,result,jam_vehicle_num):
+    def __init__(self,current_data,prev_data,result,jam_vehicle_num,interval):
         self.current_data=current_data
         self.prev_data=prev_data
         self.result=result
         self.jam_vehicle_num=jam_vehicle_num
         #TODO:合理的最小速度计算方法
-        # self.min_speed=self.current_data['size_w']*MIN_SPEED_WEIGHT
-        base_speed = max(current_data.get('size_w', MIN_VEHICLE_WIDTH), MIN_VEHICLE_WIDTH)
-        self.min_speed = base_speed * MIN_SPEED_WEIGHT
+        self.min_speed=self.current_data['size_w']*MIN_SPEED_WEIGHT
+        # base_speed = max(current_data.get('size_w', MIN_VEHICLE_WIDTH), MIN_VEHICLE_WIDTH)
+        # self.min_speed = base_speed * MIN_SPEED_WEIGHT
 
     def main(self):
         if (self.current_data['class']=="car" or self.current_data['class']=="truck") and self.current_data['speed']<self.min_speed:
@@ -37,9 +37,10 @@ class Judger:
             if len(self.prev_data)==0:
                 return False
             else:
-                # print(self.current_data['speed'])
-                # print(self.prev_data['speed'])
-                # print("=======================")
+                print(self.current_data['speed'])
+                print(self.prev_data['speed'])
+                print(self.min_speed)
+                print("=======================")
                 return self.current_data['speed']<=self.min_speed and self.prev_data['speed']<=self.min_speed
         else:
             return False

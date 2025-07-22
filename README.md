@@ -71,6 +71,77 @@ python EventDet.py --source /path/to/vedio(file->video 0->webcam) --output /path
 | -------- | ---------------- | ----- | ---------------------- | ----------------- | ---------------------------- | --------------------------------------------- |
 | 输出信息 | everything is ok | jam！ | there are parked cars! | there are people! | jam！<br />there are people! | there are parked cars!<br />there are people! |
 
+## 代码输出
+
+### 可视化输出
+
+​		直接在原输入上加入目标检测框和左上角的事件检测结果，输出到指定路径下（参数指定）
+
+### 文本输出
+
+​		**输出格式为json**
+
+#### 模板
+
+```
+{
+	"video_filename":"xxx",
+	"fps":xx.x,
+	"total_frames":xxx,
+	"results":[
+		{
+			"frame":xxx,
+			"timestamp":xx.x,
+			"event":{
+				"jam":x,
+				"parked":x,
+				"people":x
+			},
+			"objects":[
+				{
+					"track_id":x,
+					"class_id":x,
+					"class_name":"xxx",
+					"confidence":0.xxxxx,
+					"bbox":{
+						"x_min":xxx.xxx,
+						"y_min":xxx.xxx,
+						"x_max":xxx.xxx,
+						"y_max":xxx.xxx
+					}
+					"speed":xx.xxx
+				},
+				……
+			]
+		},
+		……
+	]
+}
+```
+
+#### 模板解读
+
+- video_filename：字符串，文件名
+- fps：浮点数，视频帧率
+- total_fames：整数，帧总数
+- results（每一帧的结果，匀速数量与帧总数相同）
+  - frame：整数，帧序号
+  - timestamp：浮点数，时间戳
+  - event（事件信息）
+    - jam：布尔值，是否发生”拥堵“事件
+    - parked：布尔值，是否发生”停车“事件
+    - people：布尔值，是否发生”行人“事件
+  - objects（目标检测结果，每个目标一个dict）
+    - track_id：整数，目标追踪id
+    - class_id：整数：类别id
+    - class_name：字符串：类别名称
+    - bbox（目标检测框信息）
+      - x_min：左上角x坐标
+      - y_min：左上角y坐标
+      - x_max：右下角x坐标
+      - y_max：右下角y坐标
+    - speed：目标速度
+
 ## 代码修改
 
 ### 1 修改输出方式

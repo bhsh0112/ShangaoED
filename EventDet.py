@@ -138,7 +138,8 @@ class EventDetctor:
                 continue  # Skip this frame if no tracks
 
             # Draw detection results
-            jam_result=[False,False,False]#jam,park,people
+            # jam_result=[False,False,False]#jam,park,people
+            judger=Judger(None,None,[False,False,False],[])
             for result in tracks:
                 if result.boxes.id is None:
                     continue
@@ -149,7 +150,7 @@ class EventDetctor:
                 names = result.names if hasattr(result, 'names') else {}
                 track_ids=result.boxes.id.int().cpu().tolist()
 
-                jam_vehicle_num=0
+                
                 # Iterate over each detection box
                 for i, box in enumerate(boxes.xyxy):
                     speed=0
@@ -195,11 +196,12 @@ class EventDetctor:
                         'width': 3,
                         
                     }
-                    judger=Judger(current_data,prev_data,jam_result,jam_vehicle_num,self.interval)
+                    judger.current_data=current_data
+                    judger.prev_data=prev_data
                     judger.main()
                     jam_result=judger.result
                     
-                    jam_vehicle_num=judger.jam_vehicle_num
+                    # jam_vehicle_num=judger.jam_vehicle_num
 
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)

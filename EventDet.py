@@ -2,7 +2,7 @@ import cv2
 import time
 import numpy as np
 import pandas as pd
-from ultralytics import YOLOv10
+from ultralytics import YOLO
 import signal
 import sys
 from  judger import Judger
@@ -34,6 +34,7 @@ class EventDetctor:
         self.detection_interval = 1  # Interval for stats (seconds)
         self.last_stat_time = time.time()
         self.vehicle_data=[]
+        self.interval=0
         # self.vehicle_data = pd.DataFrame(columns=[
         #     'id', 'Time', 'type', 'x', 'y', 'xv', 'yv', 
         #     'yaw', 'length', 'width', 'prev_x', 'prev_y'
@@ -91,7 +92,7 @@ class EventDetctor:
     def output(self,jam_result):
         jam, park, people = jam_result[:3]
         if jam:
-            print("success")
+            # print("success")
             if people:#jam+people
                 cv2.putText(self.frame, JAM_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
                 cv2.putText(self.frame, PEOPLE_MESSAGE, (30, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,EVENT_COLOR , 2)
@@ -115,6 +116,10 @@ class EventDetctor:
         """Run YOLOv10 model for object detection"""
         print(f"Processing video file: {video_path}")
         cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        self.interval=1.0/fps
+        print("!!!!!!!!!!!!!!!!!!!!")
+        print(self.interval)
         assert cap.isOpened(), "Cannot open video file"
 
         while cap.isOpened():
@@ -190,7 +195,7 @@ class EventDetctor:
                         'width': 3,
                         
                     }
-                    judger=Judger(current_data,prev_data,jam_result,jam_vehicle_num)
+                    judger=Judger(current_data,prev_data,jam_result,jam_vehicle_num,self.interval)
                     judger.main()
                     jam_result=judger.result
                     
@@ -221,9 +226,9 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--weights", nargs="+", type=str, default=ROOT / "weights/0714.pt", help="model path or triton URL")
+parser.add_argument("--weights",  type=str, default=ROOT / "weights/0714.pt", help="model path or triton URL")
 parser.add_argument("--source", type=str, default=ROOT / "data/test/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
-parser.add_argument("--output", type=str, default="/data2/file_swap/sh_space/ShangaoED/output/", help="output path")
+parser.add_argument("--output", type=str, default="output/", help="output path")
 
 args = parser.parse_args()
 
@@ -235,7 +240,7 @@ if os.path.isdir(output_path):
     output_path = os.path.join(output_path, input_filename)
 
 print("Final output path:", output_path)
-yolov10_model = YOLOv10(args.weights)
+yolov10_model = YOLO(args.weights)
 # print(output_path)
 yolo_tracker = EventDetctor(yolov10_model,input_path=input_path,output_path=output_path)
 yolo_tracker.run_tracking(input_path)

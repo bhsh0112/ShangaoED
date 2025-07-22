@@ -9,6 +9,7 @@ from  judger import Judger
 import argparse
 from pathlib import Path
 import os
+import json
 
 PARKED_MESSAGE="there are parked cars!"
 JAM_MESSAGE="jam!"
@@ -35,13 +36,14 @@ class EventDetctor:
         self.last_stat_time = time.time()
         self.vehicle_data=[]
         self.interval=0
-        # self.vehicle_data = pd.DataFrame(columns=[
-        #     'id', 'Time', 'type', 'x', 'y', 'xv', 'yv', 
-        #     'yaw', 'length', 'width', 'prev_x', 'prev_y'
-        # ])  # Added prev_x and prev_y to store previous positions
+        self.frame_events = []
+        self.video_filename = os.path.basename(input_path)  # 记录视频文件名
+        self.fps=0
         self.traffic_jam_threshold = 10  # Vehicle count threshold
         self.speed_threshold = 5  # Speed threshold (km/h)
         self.is_traffic_jam = False
+        self.output_path=output_path
+        self.input_path=input_path
 
         cap = cv2.VideoCapture(input_path)
         # 获取视频的帧率、宽度和高度
@@ -89,8 +91,21 @@ class EventDetctor:
         if tmp_flag is True:
             self.vehicle_data.append(current_data)
 
-    def output(self,jam_result):
+    def output(self,jam_result,frame_count,detected_objects):
         jam, park, people = jam_result[:3]
+
+        frame_data = {
+            "frame": frame_count,
+            "timestamp": frame_count / self.fps,  # 计算时间戳
+            "event":{
+                "jam": bool(jam),
+                "parked": bool(park),
+                "people": bool(people)
+            },
+            "objects": detected_objects
+            
+        }
+
         if jam:
             # print("success")
             if people:#jam+people
@@ -111,16 +126,37 @@ class EventDetctor:
                 else:#no event
                     cv2.putText(self.frame, NORMAL_MESSAGE, (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 1,NORMAL_COLOR , 2)
 
+        # event_data["status"] = status
+        self.frame_events.append(frame_data)
 
+
+    def save_events_to_json(self):
+        # 构建与输出视频同名的JSON文件路径
+        json_path = os.path.splitext(self.output_path)[0] + "_events.json"
+        
+        # 构建完整的输出数据结构
+        output_data = {
+            "video_filename": self.video_filename,
+            "fps": float(self.fps),
+            "total_frames": len(self.frame_events),
+            "result": self.frame_events
+        }
+        
+        # 写入JSON文件
+        with open(json_path, 'w') as f:
+            json.dump(output_data, f, indent=4)
+        
+        print(f"事件数据已保存至: {json_path}")
+    
     def run_tracking(self, video_path):
         """Run YOLOv10 model for object detection"""
         print(f"Processing video file: {video_path}")
         cap = cv2.VideoCapture(video_path)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        self.interval=1.0/fps
-        print("!!!!!!!!!!!!!!!!!!!!")
-        print(self.interval)
+        self.fps = cap.get(cv2.CAP_PROP_FPS)
+        self.interval=1.0/self.fps
         assert cap.isOpened(), "Cannot open video file"
+
+        frame_count = 0
 
         while cap.isOpened():
             # for _ in range(2):  # Discard the most recent 2 frames
@@ -136,6 +172,8 @@ class EventDetctor:
             if tracks is None :
                 print("Error: Tracks data is None.")
                 continue  # Skip this frame if no tracks
+
+            detected_objects = []
 
             # Draw detection results
             # jam_result=[False,False,False]#jam,park,people
@@ -200,6 +238,28 @@ class EventDetctor:
                     judger.prev_data=prev_data
                     judger.main()
                     jam_result=judger.result
+
+                    detected_objects.append({
+                        "track_id": int(track_id),
+                        "class_id": int(class_id),
+                        "class_name": class_name,
+                        "confidence": float(confidence),
+                        "bbox": {
+                            "x_min": float(x_min),
+                            "y_min": float(y_min),
+                            "x_max": float(x_max),
+                            "y_max": float(y_max)
+                        },
+                        "center": {
+                            "x": float(current_position[0]),
+                            "y": float(current_position[1])
+                        },
+                        "size": {
+                            "width": float(x_max - x_min),
+                            "height": float(y_max - y_min)
+                        },
+                        "speed": float(speed)
+                    })
                     
                     # jam_vehicle_num=judger.jam_vehicle_num
 
@@ -207,10 +267,12 @@ class EventDetctor:
                     self.update_data(track_id,current_data)
                 
             #draw the message about parking
-            self.output(jam_result)
+            self.output(jam_result,frame_count,detected_objects)
             # Show and output
             # cv2.imshow("Frame", self.frame)
             self.video_writer.write(self.frame)
+
+            frame_count += 1 
 
             # Press 'q' to exit
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -219,6 +281,8 @@ class EventDetctor:
         cap.release()
         self.video_writer.release()
         cv2.destroyAllWindows()
+
+        self.save_events_to_json()
 
 def signal_handler(sig, frame):
     print("\nRecording stopped! Video saved as", output_path)

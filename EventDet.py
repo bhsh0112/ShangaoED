@@ -44,16 +44,8 @@ class EventDetctor:
         self.is_traffic_jam = False
         self.output_path=output_path
         self.input_path=input_path
-
-        cap = cv2.VideoCapture(input_path)
-        # 获取视频的帧率、宽度和高度
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        # 定义视频编码器和输出文件
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        self.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        self.video_writer = None  # 延后到实际打开输入源后创建
+        self.stop_requested = False
 
     def get_frame(self):
         return self.frame
@@ -148,17 +140,75 @@ class EventDetctor:
         
         print(f"事件数据已保存至: {json_path}")
     
+    def request_stop(self):
+        self.stop_requested = True
+
     def run_tracking(self, video_path):
-        """Run YOLOv10 model for object detection"""
-        print(f"Processing video file: {video_path}")
-        cap = cv2.VideoCapture(video_path)
-        self.fps = cap.get(cv2.CAP_PROP_FPS)
-        self.interval=1.0/self.fps
-        assert cap.isOpened(), "Cannot open video file"
+        """Run YOLOv10 model for object detection or RTSP stream"""
+        print(f"Processing source: {video_path}")
+
+        # 更稳健的 RTSP 打开方式：设置 FFmpeg 选项并尝试使用 CAP_FFMPEG 后端
+        cap = None
+        is_rtsp = str(video_path).lower().startswith("rtsp://")
+        if is_rtsp:
+            # 通过环境变量为 FFmpeg 传入选项（OpenCV 4.5+ 支持）
+            # stimeout/rw_timeout 单位为微秒，优先使用 TCP，降低掉线概率
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000|rw_timeout;10000000|max_delay;500000|buffer_size;10485760"
+            # 第一次尝试：默认后端
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                # 第二次尝试：强制使用 FFmpeg 后端
+                cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
+        else:
+            cap = cv2.VideoCapture(video_path)
+
+        # 进一步的重试机制（短暂重试几次）
+        retry = 0
+        while (cap is None or not cap.isOpened()) and retry < 3:
+            retry += 1
+            print(f"无法打开源，重试 {retry}/3 ...")
+            if cap is not None:
+                cap.release()
+            time.sleep(1.0)
+            if is_rtsp:
+                cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
+            else:
+                cap = cv2.VideoCapture(video_path)
+
+        assert cap is not None and cap.isOpened(), "Cannot open video/stream source"
+
+        # 降低缓冲，提升实时性
+        try:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+        except Exception:
+            pass
+
+        # 获取视频的帧率、宽度和高度（RTSP可能返回0，需兜底）
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps is None or fps <= 0:
+            fps = 25.0
+        self.fps = float(fps)
+        self.interval = 1.0 / self.fps if self.fps > 0 else 0
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if width == 0 or height == 0:
+            # 读一帧以获取尺寸
+            ok, probe_frame = cap.read()
+            if not ok:
+                raise RuntimeError("Failed to read first frame to determine size")
+            height, width = probe_frame.shape[:2]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+        # 定义视频编码器和输出文件
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        self.video_writer = cv2.VideoWriter(self.output_path, fourcc, self.fps, (width, height))
 
         frame_count = 0
 
-        while cap.isOpened():
+        window_name = "EventDet"
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+        while cap.isOpened() and not self.stop_requested:
             # for _ in range(2):  # Discard the most recent 2 frames
             ret, self.frame = cap.read()
             if not ret:
@@ -176,7 +226,7 @@ class EventDetctor:
             detected_objects = []
 
             # Draw detection results
-            # jam_result=[False,False,False]#jam,park,people
+            jam_result=[False,False,False]# jam, park, people
             judger=Judger(None,None,[False,False,False],[])
             for result in tracks:
                 if result.boxes.id is None:
@@ -269,30 +319,44 @@ class EventDetctor:
             #draw the message about parking
             self.output(jam_result,frame_count,detected_objects)
             # Show and output
-            # cv2.imshow("Frame", self.frame)
+            cv2.imshow(window_name, self.frame)
             self.video_writer.write(self.frame)
+
+            # 文本输出（简要事件信息）
+            try:
+                jam, park, people = jam_result[:3]
+            except Exception:
+                jam, park, people = False, False, False
+            ts_sec = frame_count / self.fps if self.fps else 0
+            print(f"帧 {frame_count} | 时间 {ts_sec:.2f}s | 事件: 拥堵={bool(jam)} 停车={bool(park)} 行人={bool(people)} | 目标数={len(detected_objects)}")
 
             frame_count += 1 
 
             # Press 'q' to exit
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q') or key == 27:  # 'q' or ESC
                 break
 
         cap.release()
-        self.video_writer.release()
+        if self.video_writer is not None:
+            self.video_writer.release()
         cv2.destroyAllWindows()
 
         self.save_events_to_json()
 
 def signal_handler(sig, frame):
-    print("\nRecording stopped! Video saved as", output_path)
-    sys.exit(0)
-
-# Capture Ctrl+C signal
-signal.signal(signal.SIGINT, signal_handler)
+    # 优雅停止，确保资源释放并保存视频与事件JSON
+    try:
+        if 'yolo_tracker' in globals() and yolo_tracker is not None:
+            yolo_tracker.request_stop()
+            print("\n中断信号已接收，正在保存视频与事件数据...")
+        else:
+            print("\n中断信号已接收。")
+    except Exception as e:
+        print(f"\n中断处理异常: {e}")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--weights",  type=str, default=ROOT / "weights/0714.pt", help="model path or triton URL")
+parser.add_argument("--weights",  type=str, default=ROOT / "yolov10n-shangao-v2.pt", help="model path or triton URL")
 parser.add_argument("--source", type=str, default=ROOT / "data/test/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
 parser.add_argument("--output", type=str, default="output/", help="output path")
 
@@ -302,11 +366,17 @@ args = parser.parse_args()
 input_path = str(args.source)
 output_path = str(args.output)
 if os.path.isdir(output_path):
-    input_filename = os.path.basename(input_path)
+    # 针对RTSP/RTMP/HTTP流或摄像头，生成带时间戳的文件名
+    if str(input_path).startswith(("rtsp://","rtmp://","http://","https://")) or str(input_path).isdigit():
+        input_filename = f"stream_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+    else:
+        input_filename = os.path.basename(input_path)
     output_path = os.path.join(output_path, input_filename)
 
 print("Final output path:", output_path)
 yolov10_model = YOLO(args.weights)
 # print(output_path)
 yolo_tracker = EventDetctor(yolov10_model,input_path=input_path,output_path=output_path)
+# 捕获 Ctrl+C 信号（在创建 tracker 之后安装处理器，方便访问实例）
+signal.signal(signal.SIGINT, signal_handler)
 yolo_tracker.run_tracking(input_path)

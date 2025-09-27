@@ -46,6 +46,19 @@ class EventDetctor:
         self.output_path=output_path
         self.input_path=input_path
 
+        # 拥堵稳定判定与筛选配置（秒级，帧率获取后换算为帧）
+        self.jam_on_seconds = 2.0  # 连续满足至少此秒数后判为拥堵
+        self.jam_off_seconds = 1.0 # 连续不满足至少此秒数后解除拥堵
+        self.jam_confirm_frames = 0
+        self.jam_clear_frames = 0
+        self.jam_state = False
+        self._jam_consecutive = 0
+        self._nojam_consecutive = 0
+
+        # 方向与 ROI 配置
+        self.jam_axis = 'x'  # 可选 'x' 或 'y'
+        self.roi = None      # 例如 (x1, y1, x2, y2)，默认 None 表示全局
+
         cap = cv2.VideoCapture(input_path)
         # 获取视频的帧率、宽度和高度
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -80,6 +93,9 @@ class EventDetctor:
             speed = np.sqrt(speed_x ** 2 + speed_y ** 2)
         else:
             speed = 0  # No previous position, so speed is 0
+        # 归一到像素/秒
+        if self.fps and self.fps > 0:
+            speed = speed * float(self.fps)
         return speed
     
     def update_data(self,track_id,current_data):
@@ -162,6 +178,10 @@ class EventDetctor:
         has_total = total_frames > 0
         pbar = tqdm(total=total_frames if has_total else None, desc=f"Processing {os.path.basename(video_path)}", unit="frame")
         
+        # 基于 fps 计算稳定判定所需帧数
+        self.jam_confirm_frames = max(1, int(round(self.fps * self.jam_on_seconds)))
+        self.jam_clear_frames = max(1, int(round(self.fps * self.jam_off_seconds)))
+
         while cap.isOpened():
             # for _ in range(2):  # Discard the most recent 2 frames
             ret, self.frame = cap.read()
@@ -180,8 +200,12 @@ class EventDetctor:
             detected_objects = []
 
             # Draw detection results
-            # jam_result=[False,False,False]#jam,park,people
+            # 安全初始化 jam_result
+            jam_result=[False,False,False] # [jam, park, people]
             judger=Judger(None,None,[False,False,False],[])
+            # 配置 Judger 的方向与 ROI
+            judger.jam_axis = self.jam_axis
+            judger.roi = self.roi
             for result in tracks:
                 if result.boxes.id is None:
                     continue
@@ -272,6 +296,21 @@ class EventDetctor:
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
                 
+            # 拥堵状态稳定判定（时间门限与滞回）
+            if jam_result[0]:
+                self._jam_consecutive += 1
+                self._nojam_consecutive = 0
+                if not self.jam_state and self._jam_consecutive >= self.jam_confirm_frames:
+                    self.jam_state = True
+            else:
+                self._nojam_consecutive += 1
+                self._jam_consecutive = 0
+                if self.jam_state and self._nojam_consecutive >= self.jam_clear_frames:
+                    self.jam_state = False
+
+            # 使用稳定后的 jam 状态进行输出
+            jam_result[0] = self.jam_state
+
             #draw the message about parking
             self.output(jam_result,frame_count,detected_objects)
             # Show and output
@@ -301,7 +340,7 @@ signal.signal(signal.SIGINT, signal_handler)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--weights",  type=str, default=ROOT / "weights/yolov10n-shangao-v3.pt", help="model path or triton URL")
-parser.add_argument("--source", type=str, default=ROOT / "data/test/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
+parser.add_argument("--source", type=str, default=ROOT / "data/test/test_jam.mp4", help="file/dir/URL/glob/screen/0(webcam)")
 parser.add_argument("--output", type=str, default="output/", help="output path")
 
 args = parser.parse_args()

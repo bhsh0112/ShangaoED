@@ -2,3 +2,4 @@ numpy
 ultralytics
 opencv-python
 huggingface_hub
+tqdm

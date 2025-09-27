@@ -10,6 +10,7 @@ import argparse
 from pathlib import Path
 import os
 import json
+from tqdm import tqdm
 
 PARKED_MESSAGE="there are parked cars!"
 JAM_MESSAGE="jam!"
@@ -157,7 +158,10 @@ class EventDetctor:
         assert cap.isOpened(), "Cannot open video file"
 
         frame_count = 0
-
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.get(cv2.CAP_PROP_FRAME_COUNT) else 0
+        has_total = total_frames > 0
+        pbar = tqdm(total=total_frames if has_total else None, desc=f"Processing {os.path.basename(video_path)}", unit="frame")
+        
         while cap.isOpened():
             # for _ in range(2):  # Discard the most recent 2 frames
             ret, self.frame = cap.read()
@@ -223,6 +227,8 @@ class EventDetctor:
                         'id': track_id,  # Use track_id
                         'class':class_name,
                         'Time': current_time,
+                        'frame': frame_count,
+                        'fps': self.fps,
                         'type': class_id, 
                         'x': current_position[0],
                         'y': current_position[1],
@@ -273,6 +279,7 @@ class EventDetctor:
             self.video_writer.write(self.frame)
 
             frame_count += 1 
+            pbar.update(1)
 
             # Press 'q' to exit
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -281,6 +288,7 @@ class EventDetctor:
         cap.release()
         self.video_writer.release()
         cv2.destroyAllWindows()
+        pbar.close()
 
         self.save_events_to_json()
 
@@ -292,7 +300,7 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--weights",  type=str, default=ROOT / "weights/0714.pt", help="model path or triton URL")
+parser.add_argument("--weights",  type=str, default=ROOT / "weights/yolov10n-shangao-v3.pt", help="model path or triton URL")
 parser.add_argument("--source", type=str, default=ROOT / "data/test/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
 parser.add_argument("--output", type=str, default="output/", help="output path")
 

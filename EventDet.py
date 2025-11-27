@@ -10,6 +10,7 @@ import argparse
 from pathlib import Path
 import os
 import json
+from tqdm import tqdm
 
 PARKED_MESSAGE="there are parked cars!"
 JAM_MESSAGE="jam!"
@@ -47,6 +48,19 @@ class EventDetctor:
         self.video_writer = None  # 延后到实际打开输入源后创建
         self.stop_requested = False
 
+        # 拥堵稳定判定与筛选配置（秒级，帧率获取后换算为帧）
+        self.jam_on_seconds = 2.0  # 连续满足至少此秒数后判为拥堵
+        self.jam_off_seconds = 1.0 # 连续不满足至少此秒数后解除拥堵
+        self.jam_confirm_frames = 0
+        self.jam_clear_frames = 0
+        self.jam_state = False
+        self._jam_consecutive = 0
+        self._nojam_consecutive = 0
+
+        # 方向与 ROI 配置
+        self.jam_axis = 'x'  # 可选 'x' 或 'y'
+        self.roi = None      # 例如 (x1, y1, x2, y2)，默认 None 表示全局
+
     def get_frame(self):
         return self.frame
     
@@ -71,6 +85,9 @@ class EventDetctor:
             speed = np.sqrt(speed_x ** 2 + speed_y ** 2)
         else:
             speed = 0  # No previous position, so speed is 0
+        # 归一到像素/秒
+        if self.fps and self.fps > 0:
+            speed = speed * float(self.fps)
         return speed
     
     def update_data(self,track_id,current_data):
@@ -121,7 +138,6 @@ class EventDetctor:
         # event_data["status"] = status
         self.frame_events.append(frame_data)
 
-
     def save_events_to_json(self):
         # 构建与输出视频同名的JSON文件路径
         json_path = os.path.splitext(self.output_path)[0] + "_events.json"
@@ -141,8 +157,9 @@ class EventDetctor:
         print(f"事件数据已保存至: {json_path}")
     
     def request_stop(self):
+        """请求停止处理（用于信号处理）"""
         self.stop_requested = True
-
+    
     def run_tracking(self, video_path):
         """Run YOLOv10 model for object detection or RTSP stream"""
         print(f"Processing source: {video_path}")
@@ -150,6 +167,8 @@ class EventDetctor:
         # 更稳健的 RTSP 打开方式：设置 FFmpeg 选项并尝试使用 CAP_FFMPEG 后端
         cap = None
         is_rtsp = str(video_path).lower().startswith("rtsp://")
+        is_stream = is_rtsp or str(video_path).lower().startswith(("rtmp://", "http://", "https://")) or str(video_path).isdigit()
+        
         if is_rtsp:
             # 通过环境变量为 FFmpeg 传入选项（OpenCV 4.5+ 支持）
             # stimeout/rw_timeout 单位为微秒，优先使用 TCP，降低掉线概率
@@ -189,6 +208,11 @@ class EventDetctor:
             fps = 25.0
         self.fps = float(fps)
         self.interval = 1.0 / self.fps if self.fps > 0 else 0
+        
+        # 基于 fps 计算稳定判定所需帧数
+        self.jam_confirm_frames = max(1, int(round(self.fps * self.jam_on_seconds)))
+        self.jam_clear_frames = max(1, int(round(self.fps * self.jam_off_seconds)))
+        
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if width == 0 or height == 0:
@@ -204,9 +228,13 @@ class EventDetctor:
         self.video_writer = cv2.VideoWriter(self.output_path, fourcc, self.fps, (width, height))
 
         frame_count = 0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.get(cv2.CAP_PROP_FRAME_COUNT) else 0
+        has_total = total_frames > 0 and not is_stream
+        pbar = tqdm(total=total_frames if has_total else None, desc=f"Processing {os.path.basename(video_path) if not is_stream else 'stream'}", unit="frame")
 
         window_name = "EventDet"
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        if not is_stream:  # 仅对文件视频显示窗口，流媒体不显示以避免阻塞
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
         while cap.isOpened() and not self.stop_requested:
             # for _ in range(2):  # Discard the most recent 2 frames
@@ -226,8 +254,12 @@ class EventDetctor:
             detected_objects = []
 
             # Draw detection results
-            jam_result=[False,False,False]# jam, park, people
+            # 安全初始化 jam_result
+            jam_result=[False,False,False] # [jam, park, people]
             judger=Judger(None,None,[False,False,False],[])
+            # 配置 Judger 的方向与 ROI
+            judger.jam_axis = self.jam_axis
+            judger.roi = self.roi
             for result in tracks:
                 if result.boxes.id is None:
                     continue
@@ -273,6 +305,8 @@ class EventDetctor:
                         'id': track_id,  # Use track_id
                         'class':class_name,
                         'Time': current_time,
+                        'frame': frame_count,
+                        'fps': self.fps,
                         'type': class_id, 
                         'x': current_position[0],
                         'y': current_position[1],
@@ -316,10 +350,26 @@ class EventDetctor:
                     #update self.vehicle_data(merge)
                     self.update_data(track_id,current_data)
                 
+            # 拥堵状态稳定判定（时间门限与滞回）
+            if jam_result[0]:
+                self._jam_consecutive += 1
+                self._nojam_consecutive = 0
+                if not self.jam_state and self._jam_consecutive >= self.jam_confirm_frames:
+                    self.jam_state = True
+            else:
+                self._nojam_consecutive += 1
+                self._jam_consecutive = 0
+                if self.jam_state and self._nojam_consecutive >= self.jam_clear_frames:
+                    self.jam_state = False
+
+            # 使用稳定后的 jam 状态进行输出
+            jam_result[0] = self.jam_state
+
             #draw the message about parking
             self.output(jam_result,frame_count,detected_objects)
             # Show and output
-            cv2.imshow(window_name, self.frame)
+            if not is_stream:  # 仅对文件视频显示窗口
+                cv2.imshow(window_name, self.frame)
             self.video_writer.write(self.frame)
 
             # 文本输出（简要事件信息）
@@ -331,16 +381,22 @@ class EventDetctor:
             print(f"帧 {frame_count} | 时间 {ts_sec:.2f}s | 事件: 拥堵={bool(jam)} 停车={bool(park)} 行人={bool(people)} | 目标数={len(detected_objects)}")
 
             frame_count += 1 
+            if pbar is not None:
+                pbar.update(1)
 
-            # Press 'q' to exit
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or key == 27:  # 'q' or ESC
-                break
+            # Press 'q' to exit (仅对非流媒体)
+            if not is_stream:
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q') or key == 27:  # 'q' or ESC
+                    break
 
         cap.release()
         if self.video_writer is not None:
             self.video_writer.release()
-        cv2.destroyAllWindows()
+        if not is_stream:
+            cv2.destroyAllWindows()
+        if pbar is not None:
+            pbar.close()
 
         self.save_events_to_json()
 
@@ -356,8 +412,8 @@ def signal_handler(sig, frame):
         print(f"\n中断处理异常: {e}")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--weights",  type=str, default=ROOT / "yolov10n-shangao-v2.pt", help="model path or triton URL")
-parser.add_argument("--source", type=str, default=ROOT / "data/test/test.mp4", help="file/dir/URL/glob/screen/0(webcam)")
+parser.add_argument("--weights",  type=str, default=ROOT / "weights/yolov10n-shangao-v3.pt", help="model path or triton URL")
+parser.add_argument("--source", type=str, default=ROOT / "data/test/test_jam.mp4", help="file/dir/URL/glob/screen/0(webcam)")
 parser.add_argument("--output", type=str, default="output/", help="output path")
 
 args = parser.parse_args()

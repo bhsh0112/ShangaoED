@@ -2,3 +2,4 @@ runs/
 data/ShangaoED_data/
 weights/
 output/
+*.pt

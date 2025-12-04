@@ -1,0 +1,7 @@
+numpy
+ultralytics
+opencv-python
+huggingface_hub
+tqdm
+flask
+werkzeug

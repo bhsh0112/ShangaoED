@@ -1,5 +1,6 @@
 runs/
 data/ShangaoED_data/
+data/
 data/test/
 weights/
 output/

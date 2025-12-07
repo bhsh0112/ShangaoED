@@ -6,15 +6,22 @@ MAX_VEHICLE_GAP_WEIGHT = 2
 STOP_DURATION_SECONDS = 3.0  # 速度连续低于阈值达到此秒数即认为停车
 BREAKDOWN_DURATION_SECONDS = 180.0  # 停车时间超过此秒数（3分钟）即认为故障
 
-# 车辆类别基准尺寸（像素），用于归一化速度阈值
-# 这些值代表各类车辆在典型距离下的检测框宽度
-VEHICLE_BASE_WIDTH = {
-    'car': 50.0,      # 轿车基准宽度
-    'truck': 60.0,   # 卡车基准宽度（稍大，但差异不应过大）
-    'bus': 65.0,     # 公交车基准宽度
-    'motorcycle': 30.0,  # 摩托车基准宽度
-    'default': 50.0  # 默认值
+# 车辆类别归一化因子：用于消除车辆类型对检测框尺寸的影响
+# 假设在相同距离下，不同车辆类型的检测框尺寸比例
+# 使用car作为参考（归一化因子=1.0），其他车辆类型根据典型尺寸比例调整
+# 例如：truck在相同距离下的检测框约为car的1.2倍，则归一化因子为 1/1.2 ≈ 0.83
+VEHICLE_NORMALIZATION_FACTOR = {
+    'car': 1.0,           # 参考车辆，归一化因子为1.0
+    'truck': 0.85,        # 卡车在相同距离下检测框更大，需要缩小
+    'bus': 0.80,          # 公交车在相同距离下检测框更大，需要缩小
+    'motorcycle': 1.3,    # 摩托车在相同距离下检测框更小，需要放大
+    'default': 1.0        # 默认值
 }
+
+# 最小检测框尺寸阈值：小于此值的检测框可能距离过远，使用固定阈值
+MIN_DETECTION_SIZE = 10.0
+# 最大检测框尺寸阈值：大于此值的检测框可能距离过近，使用固定阈值
+MAX_DETECTION_SIZE = 200.0
 
 
 
@@ -211,9 +218,15 @@ class Judger:
         """
         计算合理的最小速度阈值（停车判断用）
         
-        解决方案：使用车辆类别的基准尺寸来归一化阈值
-        - 主要基于检测框尺寸（反映距离）
-        - 通过车辆类别的基准尺寸进行归一化，避免大车在同一距离下阈值过高
+        新方案逻辑：
+        1. 检测框尺寸主要反映距离，但也受车辆类型影响
+        2. 通过车辆类型的归一化因子消除类型影响，得到"等效距离"
+        3. 基于等效距离计算速度阈值，确保同一距离下不同车辆类型阈值相近
+        
+        核心思想：
+        - 同一距离下，大车的检测框更大，但实际物理速度应该相近
+        - 通过归一化因子将大车的检测框"缩小"到等效的car尺寸
+        - 这样同一距离下，不同车辆类型的阈值会接近
         
         Returns:
             float: 最小速度阈值（像素/帧，未乘以fps）
@@ -225,19 +238,31 @@ class Judger:
         size_w = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
         vehicle_class = self.current_data.get('class', 'default')
         
-        # 获取该车辆类别的基准宽度
-        base_width = VEHICLE_BASE_WIDTH.get(vehicle_class, VEHICLE_BASE_WIDTH['default'])
+        # 获取该车辆类别的归一化因子
+        normalization_factor = VEHICLE_NORMALIZATION_FACTOR.get(
+            vehicle_class, 
+            VEHICLE_NORMALIZATION_FACTOR['default']
+        )
         
-        # 使用基准宽度和实际尺寸的较小值，确保：
-        # 1. 距离远时（size_w小），使用实际尺寸，阈值随距离变化
-        # 2. 距离近时（size_w大），使用基准尺寸，避免大车阈值过高
-        normalized_size = min(size_w, base_width)
+        # 归一化检测框尺寸：消除车辆类型影响，得到等效的car尺寸
+        normalized_size = size_w * normalization_factor
         
+        # 限制归一化尺寸的范围，避免极端值
+        # 距离过远（检测框过小）：使用最小阈值
+        if normalized_size < MIN_DETECTION_SIZE:
+            normalized_size = MIN_DETECTION_SIZE
+        # 距离过近（检测框过大）：使用最大阈值，避免阈值过高
+        elif normalized_size > MAX_DETECTION_SIZE:
+            normalized_size = MAX_DETECTION_SIZE
+        
+        # 基于归一化尺寸计算速度阈值
         return normalized_size * MIN_SPEED_WEIGHT
     
     def _calculate_slow_speed(self):
         """
         计算慢速车辆阈值（拥堵判断用）
+        
+        使用与停车判断相同的归一化逻辑，确保一致性
         
         Returns:
             float: 慢速阈值（像素/帧，未乘以fps）
@@ -249,12 +274,22 @@ class Judger:
         size_w = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
         vehicle_class = self.current_data.get('class', 'default')
         
-        # 获取该车辆类别的基准宽度
-        base_width = VEHICLE_BASE_WIDTH.get(vehicle_class, VEHICLE_BASE_WIDTH['default'])
+        # 获取该车辆类别的归一化因子
+        normalization_factor = VEHICLE_NORMALIZATION_FACTOR.get(
+            vehicle_class, 
+            VEHICLE_NORMALIZATION_FACTOR['default']
+        )
         
-        # 使用基准宽度和实际尺寸的较小值进行归一化
-        normalized_size = min(size_w, base_width)
+        # 归一化检测框尺寸：消除车辆类型影响
+        normalized_size = size_w * normalization_factor
         
+        # 限制归一化尺寸的范围
+        if normalized_size < MIN_DETECTION_SIZE:
+            normalized_size = MIN_DETECTION_SIZE
+        elif normalized_size > MAX_DETECTION_SIZE:
+            normalized_size = MAX_DETECTION_SIZE
+        
+        # 基于归一化尺寸计算速度阈值
         return normalized_size * SLOW_SPEED_WEIGHT
     
     def is_slow_vehicle(self):

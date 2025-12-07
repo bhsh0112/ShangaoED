@@ -1,10 +1,20 @@
 MIN_SPEED_WEIGHT=0.03
-SLOW_SPEED_WEIGHT=1
-MAX_JAM_VEHICLE_NUM=10
+SLOW_SPEED_WEIGHT=0.25
+MAX_JAM_VEHICLE_NUM=20
 MIN_VEHICLE_WIDTH = 1.5
 MAX_VEHICLE_GAP_WEIGHT = 2
-STOP_DURATION_SECONDS = 2.0  # 速度连续低于阈值达到此秒数即认为停车
+STOP_DURATION_SECONDS = 3.0  # 速度连续低于阈值达到此秒数即认为停车
 BREAKDOWN_DURATION_SECONDS = 180.0  # 停车时间超过此秒数（3分钟）即认为故障
+
+# 车辆类别基准尺寸（像素），用于归一化速度阈值
+# 这些值代表各类车辆在典型距离下的检测框宽度
+VEHICLE_BASE_WIDTH = {
+    'car': 50.0,      # 轿车基准宽度
+    'truck': 60.0,   # 卡车基准宽度（稍大，但差异不应过大）
+    'bus': 65.0,     # 公交车基准宽度
+    'motorcycle': 30.0,  # 摩托车基准宽度
+    'default': 50.0  # 默认值
+}
 
 
 
@@ -25,11 +35,9 @@ class Judger:
         # 方向与区域配置（由外部注入，默认为全局与按 x 轴）
         self.jam_axis = getattr(self, 'jam_axis', 'x')
         self.roi = getattr(self, 'roi', None)  # (x1, y1, x2, y2)
-        #TODO:合理的最小速度计算方法
-        self.min_speed=0
-        self.slow_speed=0
-        # base_speed = max(current_data.get('size_w', MIN_VEHICLE_WIDTH), MIN_VEHICLE_WIDTH)
-        # self.min_speed = base_speed * MIN_SPEED_WEIGHT
+        # 计算合理的最小速度阈值
+        self.min_speed = self._calculate_min_speed()
+        self.slow_speed = self._calculate_slow_speed()
 
     def main(self):
         """处理单个车辆数据并更新拥堵候选列表。
@@ -37,8 +45,13 @@ class Judger:
         - ROI: 若配置了 ROI，仅在区域内才参与拥堵候选
         - 注意：拥堵判断需要在处理完当前帧所有车辆后，通过 checkJam() 方法调用
         """
-        self.min_speed=self.current_data['size_w']*MIN_SPEED_WEIGHT
-        self.slow_speed=self.current_data['size_w']*SLOW_SPEED_WEIGHT
+        # 如果 current_data 为 None，直接返回
+        if self.current_data is None:
+            return
+        
+        # 重新计算速度阈值（因为 current_data 可能已更新）
+        self.min_speed = self._calculate_min_speed()
+        self.slow_speed = self._calculate_slow_speed()
         fps = float(self.current_data.get('fps', 0) or 0)
         if fps > 0:
             self.min_speed *= fps
@@ -62,11 +75,16 @@ class Judger:
         # 处理单个车辆的事件判断（停车、故障和行人）
         # 注意：拥堵判断需要基于当前帧所有车辆，应在处理完所有车辆后调用 checkJam()
         if self.result[0]==False:#jam
+            # 根据当前帧的停车判断结果更新停车状态
+            # 如果当前速度高于阈值，isParking() 会返回 False，需要重置停车状态
             if self.isParking():
                 self.result[1]=True
                 # 检查是否达到故障条件（停车时间超过3分钟）
                 if self.isBreakdown():
                     self.result[3]=True
+            else:
+                # 当前帧不满足停车条件，重置停车状态（但保留故障状态，因为故障是累积的）
+                self.result[1]=False
         
         if self.isPeople():#people
             self.result[2]=True
@@ -116,7 +134,9 @@ class Judger:
         current_duration = prev_duration + dt if is_low_speed else 0.0
         self.current_data['low_speed_duration'] = current_duration
 
-        return current_duration >= STOP_DURATION_SECONDS
+        # 只有当当前速度低于阈值且累计持续时间满足条件时，才判定为停车
+        # 如果当前速度高于阈值，即使历史持续时间很长，也不应该判定为停车
+        return is_low_speed and current_duration >= STOP_DURATION_SECONDS
         
     def isJam(self):
         """拥堵判定
@@ -186,6 +206,56 @@ class Judger:
         current_duration = float(self.current_data.get('low_speed_duration', 0.0))
         
         return current_duration >= BREAKDOWN_DURATION_SECONDS
+    
+    def _calculate_min_speed(self):
+        """
+        计算合理的最小速度阈值（停车判断用）
+        
+        解决方案：使用车辆类别的基准尺寸来归一化阈值
+        - 主要基于检测框尺寸（反映距离）
+        - 通过车辆类别的基准尺寸进行归一化，避免大车在同一距离下阈值过高
+        
+        Returns:
+            float: 最小速度阈值（像素/帧，未乘以fps）
+        """
+        # 如果 current_data 为 None，返回默认值
+        if self.current_data is None:
+            return MIN_VEHICLE_WIDTH * MIN_SPEED_WEIGHT
+        
+        size_w = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
+        vehicle_class = self.current_data.get('class', 'default')
+        
+        # 获取该车辆类别的基准宽度
+        base_width = VEHICLE_BASE_WIDTH.get(vehicle_class, VEHICLE_BASE_WIDTH['default'])
+        
+        # 使用基准宽度和实际尺寸的较小值，确保：
+        # 1. 距离远时（size_w小），使用实际尺寸，阈值随距离变化
+        # 2. 距离近时（size_w大），使用基准尺寸，避免大车阈值过高
+        normalized_size = min(size_w, base_width)
+        
+        return normalized_size * MIN_SPEED_WEIGHT
+    
+    def _calculate_slow_speed(self):
+        """
+        计算慢速车辆阈值（拥堵判断用）
+        
+        Returns:
+            float: 慢速阈值（像素/帧，未乘以fps）
+        """
+        # 如果 current_data 为 None，返回默认值
+        if self.current_data is None:
+            return MIN_VEHICLE_WIDTH * SLOW_SPEED_WEIGHT
+        
+        size_w = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
+        vehicle_class = self.current_data.get('class', 'default')
+        
+        # 获取该车辆类别的基准宽度
+        base_width = VEHICLE_BASE_WIDTH.get(vehicle_class, VEHICLE_BASE_WIDTH['default'])
+        
+        # 使用基准宽度和实际尺寸的较小值进行归一化
+        normalized_size = min(size_w, base_width)
+        
+        return normalized_size * SLOW_SPEED_WEIGHT
     
     def is_slow_vehicle(self):
         """判断当前车辆是否为慢速车辆"""

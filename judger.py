@@ -1,4 +1,4 @@
-MIN_SPEED_WEIGHT=0.03
+MIN_SPEED_WEIGHT=0.02
 SLOW_SPEED_WEIGHT=0.25
 MAX_JAM_VEHICLE_NUM=20
 MIN_VEHICLE_WIDTH = 1.5
@@ -12,7 +12,7 @@ BREAKDOWN_DURATION_SECONDS = 180.0  # 停车时间超过此秒数（3分钟）�
 # 例如：truck在相同距离下的检测框约为car的1.2倍，则归一化因子为 1/1.2 ≈ 0.83
 VEHICLE_NORMALIZATION_FACTOR = {
     'car': 1.0,           # 参考车辆，归一化因子为1.0
-    'truck': 0.85,        # 卡车在相同距离下检测框更大，需要缩小
+    'truck': 0.5,        # 卡车在相同距离下检测框更大，需要缩小
     'bus': 0.80,          # 公交车在相同距离下检测框更大，需要缩小
     'motorcycle': 1.3,    # 摩托车在相同距离下检测框更小，需要放大
     'default': 1.0        # 默认值
@@ -235,7 +235,7 @@ class Judger:
         if self.current_data is None:
             return MIN_VEHICLE_WIDTH * MIN_SPEED_WEIGHT
         
-        size_w = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
+        size_w = self.current_data.get('size_h', MIN_VEHICLE_WIDTH)
         vehicle_class = self.current_data.get('class', 'default')
         
         # 获取该车辆类别的归一化因子

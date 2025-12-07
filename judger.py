@@ -11,7 +11,7 @@ BREAKDOWN_DURATION_SECONDS = 180.0  # 停车时间超过此秒数（3分钟）�
 # 使用car作为参考（归一化因子=1.0），其他车辆类型根据典型尺寸比例调整
 # 例如：truck在相同距离下的检测框约为car的1.2倍，则归一化因子为 1/1.2 ≈ 0.83
 VEHICLE_NORMALIZATION_FACTOR = {
-    'car': 1.0,           # 参考车辆，归一化因子为1.0
+    'car': 1.2,           # 参考车辆，归一化因子为1.0
     'truck': 0.5,        # 卡车在相同距离下检测框更大，需要缩小
     'bus': 0.80,          # 公交车在相同距离下检测框更大，需要缩小
     'motorcycle': 1.3,    # 摩托车在相同距离下检测框更小，需要放大
@@ -235,8 +235,10 @@ class Judger:
         if self.current_data is None:
             return MIN_VEHICLE_WIDTH * MIN_SPEED_WEIGHT
         
-        size_w = self.current_data.get('size_h', MIN_VEHICLE_WIDTH)
         vehicle_class = self.current_data.get('class', 'default')
+        size = self.current_data.get('size_h', MIN_VEHICLE_WIDTH) if vehicle_class == "truck" else self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
+        # size = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
+        
         
         # 获取该车辆类别的归一化因子
         normalization_factor = VEHICLE_NORMALIZATION_FACTOR.get(
@@ -245,7 +247,7 @@ class Judger:
         )
         
         # 归一化检测框尺寸：消除车辆类型影响，得到等效的car尺寸
-        normalized_size = size_w * normalization_factor
+        normalized_size = size * normalization_factor
         
         # 限制归一化尺寸的范围，避免极端值
         # 距离过远（检测框过小）：使用最小阈值

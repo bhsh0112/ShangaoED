@@ -154,7 +154,6 @@ class Judger:
         Returns:
             bool: 如果检测到拥堵返回 True，否则返回 False
         """
-        print(len(self.jam_vehicle_info))
         if len(self.jam_vehicle_info) < MAX_JAM_VEHICLE_NUM:
             return False
 
@@ -166,9 +165,6 @@ class Judger:
 
         consecutive_count = 1
         for i in range(1, len(sorted_vehicles)):
-            print("===================debug================")
-            
-            print(consecutive_count)
             prev = sorted_vehicles[i-1]
             curr = sorted_vehicles[i]
 

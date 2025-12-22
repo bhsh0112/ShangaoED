@@ -443,12 +443,14 @@ class EventDetctor:
             detected_objects = []
 
             # Draw detection results
-            # 安全初始化 jam_result
+            # 安全初始化 jam_result（用于累积所有车辆的事件状态）
             jam_result=[False,False,False,False] # [jam, park, people, breakdown]
             judger=Judger(None,None,[False,False,False,False],[])
             # 配置 Judger 的方向与 ROI
             judger.jam_axis = self.jam_axis
             judger.roi = self.roi
+            # 重置拥堵车辆信息列表（每帧开始时清空）
+            judger.jam_vehicle_info = []
             for result in tracks:
                 if result.boxes.id is None:
                     continue
@@ -468,23 +470,9 @@ class EventDetctor:
                     class_id = int(class_ids[i])  # Get class ID
                     track_id=track_ids[i]
 
-                    if confidence < 0.1:
+                    if confidence < 0.3:
                         continue
 
-                    # Draw bounding box
-                    color = (0, 255, 0)  # Green box
-                    cv2.rectangle(self.frame, (int(x_min), int(y_min)), (int(x_max), int(y_max)), color, 2)
-
-                    # Label the box with class and confidence
-                    class_name = names[class_id] if names and class_id in names else "unknown"
-                    label = f"{class_name}: {confidence:.2f}"
-                    if class_name=="person":
-                        if confidence>=0.8:
-                            cv2.putText(self.frame, label, (int(x_min), int(y_min) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                        else:
-                            continue
-                    else:
-                        cv2.putText(self.frame, label, (int(x_min), int(y_min) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                     # Get the current position of the vehicle
                     current_position = (x_min + x_max) / 2, (y_min + y_max) / 2
 
@@ -494,6 +482,9 @@ class EventDetctor:
                     #get previous posituon
                     speed=self.calculate_speed(prev_data=prev_data,current_position=current_position)
 
+                    # Label the box with class and confidence
+                    class_name = names[class_id] if names and class_id in names else "unknown"
+                    
                     # get current data
                     current_data = {
                         'id': track_id,  # Use track_id
@@ -515,8 +506,50 @@ class EventDetctor:
                     }
                     judger.current_data=current_data
                     judger.prev_data=prev_data
+                    # 为当前车辆创建独立的结果列表，避免被后续车辆覆盖
+                    vehicle_result = [False, False, False, False]
+                    judger.result = vehicle_result
                     judger.main()
-                    jam_result=judger.result
+                    
+                    # 获取当前车辆的停车状态（用于绘制橙色框）
+                    is_parking = vehicle_result[1] if len(vehicle_result) > 1 else False
+                    
+                    # 累积所有车辆的事件状态（使用 OR 逻辑：只要有任何一个车辆满足条件，就认为有事件）
+                    # 注意：拥堵判断需要在所有车辆处理完后统一进行，所以这里不累积 jam_result[0]
+                    if len(vehicle_result) > 1:
+                        jam_result[1] = jam_result[1] or vehicle_result[1]  # 停车：累积
+                    if len(vehicle_result) > 2:
+                        jam_result[2] = jam_result[2] or vehicle_result[2]  # 行人：累积
+                    if len(vehicle_result) > 3:
+                        jam_result[3] = jam_result[3] or vehicle_result[3]  # 故障：累积
+                    if is_parking:
+                        # 停车车辆：使用橙色并加粗
+                        color = (0, 165, 255)  # 橙色 (BGR格式)
+                        thickness = 4  # 加粗线宽
+                    else:
+                        # 正常车辆：使用绿色
+                        color = (0, 255, 0)  # Green box
+                        thickness = 2  # 正常线宽
+                    
+                    # Draw bounding box
+                    cv2.rectangle(self.frame, (int(x_min), int(y_min)), (int(x_max), int(y_max)), color, thickness)
+
+                    # Label the box with class and confidence
+                    if class_name=="person":
+                        if confidence>=0.8:
+                            label = f"{class_name}: {confidence:.2f}"
+                            cv2.putText(self.frame, label, (int(x_min), int(y_min) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                        else:
+                            continue
+                    else:
+                        # 对于车辆，无论是否停车都显示速度和停车阈值
+                        speed_threshold = judger.min_speed
+                        label1 = f"{class_name}: {confidence:.2f}"
+                        label2 = f"Speed: {speed:.2f} | Threshold: {speed_threshold:.2f}"
+                        # 绘制第一行标签（类别和置信度）
+                        cv2.putText(self.frame, label1, (int(x_min), int(y_min) - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                        # 绘制第二行标签（速度和阈值）
+                        cv2.putText(self.frame, label2, (int(x_min), int(y_min) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
                     detected_objects.append({
                         "track_id": int(track_id),
@@ -547,9 +580,20 @@ class EventDetctor:
             
             # 处理完当前帧所有车辆后，检查拥堵
             # 注意：拥堵判断需要基于当前帧所有慢速车辆，所以要在循环结束后调用
+            # 保存已累积的事件状态（停车、行人、故障）
+            saved_park = jam_result[1]
+            saved_people = jam_result[2] if len(jam_result) > 2 else False
+            saved_breakdown = jam_result[3] if len(jam_result) > 3 else False
+            
             if not jam_result[0]:  # 如果还没有判定为拥堵
                 judger.checkJam()
-                jam_result = judger.result
+                # 只更新拥堵状态，保留已累积的其他事件状态
+                jam_result[0] = judger.result[0]
+                jam_result[1] = saved_park  # 恢复累积的停车状态
+                if len(jam_result) > 2:
+                    jam_result[2] = saved_people  # 恢复累积的行人状态
+                if len(jam_result) > 3:
+                    jam_result[3] = saved_breakdown  # 恢复累积的故障状态
             
             # 拥堵状态稳定判定（时间门限与滞回）
             if jam_result[0]:

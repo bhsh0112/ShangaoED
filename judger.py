@@ -27,11 +27,11 @@ MAX_DETECTION_SIZE = 200.0
 # 距离因子范围：用于根据目标框距离图像底部的距离调整速度阈值
 # 图像底部（y 接近 image_height）代表近距离，使用最大因子
 # 图像顶部（y 接近 0）代表远距离，使用最小因子
-MIN_DISTANCE_FACTOR = 0.3  # 最远距离时的最小距离因子（阈值会更小）
+MIN_DISTANCE_FACTOR = 0.1  # 最远距离时的最小距离因子（阈值会更小）
 MAX_DISTANCE_FACTOR = 1.0  # 最近距离时的最大距离因子（阈值会更大）
 # 基础速度阈值：用于乘以距离因子得到最终阈值
-BASE_MIN_SPEED_THRESHOLD = 15.0  # 停车判断的基础阈值（像素/帧）
-BASE_SLOW_SPEED_THRESHOLD = 50.0  # 拥堵判断的基础阈值（像素/帧）
+BASE_MIN_SPEED_THRESHOLD = 3.0  # 停车判断的基础阈值（像素/帧）
+BASE_SLOW_SPEED_THRESHOLD = 10.0  # 拥堵判断的基础阈值（像素/帧）
 
 
 

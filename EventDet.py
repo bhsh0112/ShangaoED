@@ -406,8 +406,21 @@ class EventDetctor:
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
         # 定义视频编码器和输出文件
+        # 确保输出目录存在
+        output_dir = os.path.dirname(self.output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"创建输出目录: {output_dir}")
+        
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         self.video_writer = cv2.VideoWriter(self.output_path, fourcc, self.fps, (width, height))
+        
+        # 验证 VideoWriter 是否成功初始化
+        if not self.video_writer.isOpened():
+            raise RuntimeError(f"无法创建输出视频文件: {self.output_path}\n"
+                             f"请检查：1) 输出目录是否存在且可写 2) 文件路径是否正确 3) 磁盘空间是否足够")
+        
+        print(f"视频输出文件已创建: {self.output_path}")
 
         frame_count = 0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.get(cv2.CAP_PROP_FRAME_COUNT) else 0
@@ -662,7 +675,10 @@ class EventDetctor:
                 self.update_display_fps()
             
             # 写入视频文件（包含可视化内容）
-            self.video_writer.write(self.frame)
+            if self.video_writer is not None and self.video_writer.isOpened():
+                self.video_writer.write(self.frame)
+            else:
+                print(f"警告: VideoWriter 未正确初始化，跳过帧写入")
 
             # 实时可视化窗口显示
             if self.show_window:

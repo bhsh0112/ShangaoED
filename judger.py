@@ -23,6 +23,16 @@ MIN_DETECTION_SIZE = 10.0
 # 最大检测框尺寸阈值：大于此值的检测框可能距离过近，使用固定阈值
 MAX_DETECTION_SIZE = 200.0
 
+# 基于距离的速度阈值计算参数
+# 距离因子范围：用于根据目标框距离图像底部的距离调整速度阈值
+# 图像底部（y 接近 image_height）代表近距离，使用最大因子
+# 图像顶部（y 接近 0）代表远距离，使用最小因子
+MIN_DISTANCE_FACTOR = 0.3  # 最远距离时的最小距离因子（阈值会更小）
+MAX_DISTANCE_FACTOR = 1.0  # 最近距离时的最大距离因子（阈值会更大）
+# 基础速度阈值：用于乘以距离因子得到最终阈值
+BASE_MIN_SPEED_THRESHOLD = 15.0  # 停车判断的基础阈值（像素/帧）
+BASE_SLOW_SPEED_THRESHOLD = 50.0  # 拥堵判断的基础阈值（像素/帧）
+
 
 
 
@@ -42,6 +52,8 @@ class Judger:
         # 方向与区域配置（由外部注入，默认为全局与按 x 轴）
         self.jam_axis = getattr(self, 'jam_axis', 'x')
         self.roi = getattr(self, 'roi', None)  # (x1, y1, x2, y2)
+        # 图像高度（用于计算目标框距离底部的距离）
+        self.image_height = getattr(self, 'image_height', None)
         # 计算合理的最小速度阈值
         self.min_speed = self._calculate_min_speed()
         self.slow_speed = self._calculate_slow_speed()
@@ -214,81 +226,91 @@ class Judger:
         """
         计算合理的最小速度阈值（停车判断用）
         
-        新方案逻辑：
-        1. 检测框尺寸主要反映距离，但也受车辆类型影响
-        2. 通过车辆类型的归一化因子消除类型影响，得到"等效距离"
-        3. 基于等效距离计算速度阈值，确保同一距离下不同车辆类型阈值相近
+        基于目标框距离图像底部的距离计算速度阈值：
+        1. 目标框中心点的 y 坐标越大，距离图像底部越近，距离摄像头越近
+        2. 距离摄像头越近，速度阈值应该越大（因为相同的像素速度对应的实际速度更大）
+        3. 距离摄像头越远，速度阈值应该越小（因为相同的像素速度对应的实际速度更小）
+        
+        计算逻辑：
+        - 计算距离因子：distance_factor = min_factor + (max_factor - min_factor) * (y / image_height)
+        - 速度阈值 = base_threshold * distance_factor
         
         核心思想：
-        - 同一距离下，大车的检测框更大，但实际物理速度应该相近
-        - 通过归一化因子将大车的检测框"缩小"到等效的car尺寸
-        - 这样同一距离下，不同车辆类型的阈值会接近
+        - 高速公路场景中，摄像头通常安装在较高位置，视野向下
+        - 图像底部（y 接近 image_height）代表近距离，阈值应该更大
+        - 图像顶部（y 接近 0）代表远距离，阈值应该更小
         
         Returns:
             float: 最小速度阈值（像素/帧，未乘以fps）
         """
         # 如果 current_data 为 None，返回默认值
         if self.current_data is None:
-            return MIN_VEHICLE_WIDTH * MIN_SPEED_WEIGHT
+            return BASE_MIN_SPEED_THRESHOLD * MIN_DISTANCE_FACTOR
         
-        vehicle_class = self.current_data.get('class', 'default')
-        size = self.current_data.get('size_h', MIN_VEHICLE_WIDTH) if vehicle_class == "truck" else self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
-        # size = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
+        # 获取目标框中心点的 y 坐标
+        y = self.current_data.get('y', None)
         
+        # 如果没有图像高度信息或 y 坐标，使用默认距离因子
+        if self.image_height is None or y is None or self.image_height <= 0:
+            # 如果没有距离信息，使用中等距离因子
+            distance_factor = (MIN_DISTANCE_FACTOR + MAX_DISTANCE_FACTOR) / 2.0
+            return BASE_MIN_SPEED_THRESHOLD * distance_factor
         
-        # 获取该车辆类别的归一化因子
-        normalization_factor = VEHICLE_NORMALIZATION_FACTOR.get(
-            vehicle_class, 
-            VEHICLE_NORMALIZATION_FACTOR['default']
-        )
+        # 计算归一化的 y 坐标位置（0 到 1 之间）
+        # y 越大，说明越靠近图像底部，距离摄像头越近
+        normalized_y = y / float(self.image_height)
         
-        # 归一化检测框尺寸：消除车辆类型影响，得到等效的car尺寸
-        normalized_size = size * normalization_factor
+        # 限制在 [0, 1] 范围内
+        normalized_y = max(0.0, min(1.0, normalized_y))
         
-        # 限制归一化尺寸的范围，避免极端值
-        # 距离过远（检测框过小）：使用最小阈值
-        if normalized_size < MIN_DETECTION_SIZE:
-            normalized_size = MIN_DETECTION_SIZE
-        # 距离过近（检测框过大）：使用最大阈值，避免阈值过高
-        elif normalized_size > MAX_DETECTION_SIZE:
-            normalized_size = MAX_DETECTION_SIZE
+        # 计算距离因子：线性插值
+        # normalized_y = 0 (顶部，远距离) -> 使用 MIN_DISTANCE_FACTOR
+        # normalized_y = 1 (底部，近距离) -> 使用 MAX_DISTANCE_FACTOR
+        distance_factor = MIN_DISTANCE_FACTOR + (MAX_DISTANCE_FACTOR - MIN_DISTANCE_FACTOR) * normalized_y
         
-        # 基于归一化尺寸计算速度阈值
-        return normalized_size * MIN_SPEED_WEIGHT
+        # 基于距离因子计算速度阈值
+        return BASE_MIN_SPEED_THRESHOLD * distance_factor
     
     def _calculate_slow_speed(self):
         """
         计算慢速车辆阈值（拥堵判断用）
         
-        使用与停车判断相同的归一化逻辑，确保一致性
+        使用与停车判断相同的基于距离的计算逻辑，确保一致性
+        
+        基于目标框距离图像底部的距离计算速度阈值：
+        - 距离摄像头越近，速度阈值应该越大
+        - 距离摄像头越远，速度阈值应该越小
         
         Returns:
             float: 慢速阈值（像素/帧，未乘以fps）
         """
         # 如果 current_data 为 None，返回默认值
         if self.current_data is None:
-            return MIN_VEHICLE_WIDTH * SLOW_SPEED_WEIGHT
+            return BASE_SLOW_SPEED_THRESHOLD * MIN_DISTANCE_FACTOR
         
-        size_w = self.current_data.get('size_w', MIN_VEHICLE_WIDTH)
-        vehicle_class = self.current_data.get('class', 'default')
+        # 获取目标框中心点的 y 坐标
+        y = self.current_data.get('y', None)
         
-        # 获取该车辆类别的归一化因子
-        normalization_factor = VEHICLE_NORMALIZATION_FACTOR.get(
-            vehicle_class, 
-            VEHICLE_NORMALIZATION_FACTOR['default']
-        )
+        # 如果没有图像高度信息或 y 坐标，使用默认距离因子
+        if self.image_height is None or y is None or self.image_height <= 0:
+            # 如果没有距离信息，使用中等距离因子
+            distance_factor = (MIN_DISTANCE_FACTOR + MAX_DISTANCE_FACTOR) / 2.0
+            return BASE_SLOW_SPEED_THRESHOLD * distance_factor
         
-        # 归一化检测框尺寸：消除车辆类型影响
-        normalized_size = size_w * normalization_factor
+        # 计算归一化的 y 坐标位置（0 到 1 之间）
+        # y 越大，说明越靠近图像底部，距离摄像头越近
+        normalized_y = y / float(self.image_height)
         
-        # 限制归一化尺寸的范围
-        if normalized_size < MIN_DETECTION_SIZE:
-            normalized_size = MIN_DETECTION_SIZE
-        elif normalized_size > MAX_DETECTION_SIZE:
-            normalized_size = MAX_DETECTION_SIZE
+        # 限制在 [0, 1] 范围内
+        normalized_y = max(0.0, min(1.0, normalized_y))
         
-        # 基于归一化尺寸计算速度阈值
-        return normalized_size * SLOW_SPEED_WEIGHT
+        # 计算距离因子：线性插值
+        # normalized_y = 0 (顶部，远距离) -> 使用 MIN_DISTANCE_FACTOR
+        # normalized_y = 1 (底部，近距离) -> 使用 MAX_DISTANCE_FACTOR
+        distance_factor = MIN_DISTANCE_FACTOR + (MAX_DISTANCE_FACTOR - MIN_DISTANCE_FACTOR) * normalized_y
+        
+        # 基于距离因子计算速度阈值
+        return BASE_SLOW_SPEED_THRESHOLD * distance_factor
     
     def is_slow_vehicle(self):
         """判断当前车辆是否为慢速车辆"""

@@ -449,6 +449,8 @@ class EventDetctor:
             # 配置 Judger 的方向与 ROI
             judger.jam_axis = self.jam_axis
             judger.roi = self.roi
+            # 配置图像高度（用于基于距离的速度阈值计算）
+            judger.image_height = height
             # 重置拥堵车辆信息列表（每帧开始时清空）
             judger.jam_vehicle_info = []
             for result in tracks:
